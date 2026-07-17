@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wp2shell-poc"
+version = "1.0.0"
+description = "PoC for the WordPress REST batch route-confusion SQL injection to RCE chain (CVE-2026-63030)."
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+keywords = ["wordpress", "rest-api", "sql-injection", "rce", "security", "cve-2026-63030"]
+classifiers = [
+    "Environment :: Console",
+    "Intended Audience :: Information Technology",
+    "Topic :: Security",
+]
+
+[project.scripts]
+wp2shell = "wp2shell.cli:main"
+
+[tool.setuptools]
+packages = ["wp2shell"]
