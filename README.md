@@ -98,13 +98,14 @@ plaintext here after offline cracking.
 ```
 
 `shell` uploads a plugin webshell (locked behind a random path and a per-run token) and prints its
-path. Remove it when finished.
+path. Remove it when finished — either pass `--cleanup` to have it delete itself after running, or
+delete the plugin manually.
 
 ## Options
 
 | Option              | Applies to | Description                                                           |
 | ------------------- | ---------- | -------------------------------------------------------------------- |
-| `--rest-route`      | all        | Use `/?rest_route=/batch/v1` (for sites without pretty permalinks).  |
+| `--rest-route`      | check, read | Use `/?rest_route=/batch/v1` (for sites without pretty permalinks). |
 | `--proxy URL`       | all        | Route traffic through an HTTP proxy (for example, Burp).             |
 | `--timeout N`       | all        | Request timeout in seconds.                                          |
 | `--sleep N`         | check      | Delay used to confirm the injection.                                 |
@@ -114,8 +115,9 @@ path. Remove it when finished.
 | `--prefix`          | read       | Database table prefix (default `wp_`).                               |
 | `--max-length N`    | read       | Maximum characters read per value (default 128).                     |
 | `--user` / `--password` | shell  | Admin credentials (plaintext, recovered from the hash).             |
-| `--cmd`             | shell      | Command to run (omit when using `-i`).                               |
+| `--cmd`             | shell      | Command to run (omit when using `-i`).                              |
 | `-i` / `--interactive` | shell   | Open an interactive shell after deploying.                           |
+| `--cleanup`         | shell      | Delete the webshell from the target when finished.                   |
 
 ## Remediation
 

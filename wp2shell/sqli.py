@@ -103,9 +103,15 @@ class BlindSQLi:
         return "".join(chars)
 
     def integer(self, expression: str) -> int:
-        """Read an integer-valued SQL expression."""
+        """Read an integer-valued SQL expression.
+
+        Raises ValueError when the extracted text is not an integer, so a
+        failed extraction cannot be mistaken for a real count of zero.
+        """
         text = self.extract(expression).strip()
-        return int(text) if text.lstrip("-").isdigit() else 0
+        if not text.lstrip("-").isdigit():
+            raise ValueError(f"expected an integer from {expression!r}, got {text!r}")
+        return int(text)
 
     def _elapsed(self, sql: str) -> float:
         self.requests += 1

