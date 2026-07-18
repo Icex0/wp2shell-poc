@@ -68,11 +68,17 @@ Or `pip install .` to get a `wp2shell` command on your `PATH`.
 
 ### check — confirm the vulnerability (safe)
 
-Confirms exploitability with paired differential time delays. It reads no data and changes
-nothing. By default it sends three baseline/delayed pairs and decides on the median delta, which
-is more reliable on noisy or rate-limited targets than a single timing comparison. If timing
-confirmation fails, `check` also looks for passive public WordPress version hints from the REST API
-generator, the homepage generator meta tag, and core asset `?ver=` query strings.
+Prints passive WordPress markers and public version hints first, then sends a benign batch marker
+probe. If the batch route behaves like WordPress, the probe should return HTTP 207 with markers
+such as `parse_path_failed`, `block_cannot_read`, or `rest_batch_not_allowed`. After that, `check`
+tries a paired timing confirmation. The timing step reads no data and changes nothing. By default
+it sends three baseline/delayed pairs and decides on the median delta, which is more reliable on
+noisy or rate-limited targets than a single timing comparison.
+
+Treat the signals separately: an affected public version is strong triage evidence, while timing
+confirmation proves the SQLi path reached the database. A WAF or edge rule can block the timing
+payload, so a failed timing check is reported as "not timing-confirmed" rather than a clean bill of
+health.
 
 ```
 ./wp2shell.py check http://target

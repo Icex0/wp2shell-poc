@@ -16,6 +16,7 @@ from typing import Any, Optional
 # under the following sub-request's handler. Any parse_url()-rejecting string works; "///" is
 # used so it cannot be mistaken for a network target.
 _DESYNC_PRIMER = {"method": "POST", "path": "///"}
+_BATCH_MARKER_CODES = ("parse_path_failed", "block_cannot_read", "rest_batch_not_allowed")
 
 
 class TargetError(Exception):
@@ -96,6 +97,41 @@ class BatchClient:
     def probe(self) -> Response:
         """A benign empty batch, used to test whether the endpoint is reachable and open."""
         return self.post({"requests": []})
+
+    def marker_probe(self) -> Response:
+        """A benign batch that should produce stable WordPress REST error markers."""
+        return self.post(
+            {
+                "requests": [
+                    _DESYNC_PRIMER,
+                    {"method": "POST", "path": "/wp/v2/block-renderer/core/archives"},
+                    {"method": "POST", "path": "/batch/v1", "body": {"requests": []}},
+                ]
+            }
+        )
+
+    @staticmethod
+    def batch_marker_codes(response: Response) -> tuple:
+        try:
+            body = response.json()
+        except ValueError:
+            return ()
+
+        found = []
+
+        def walk(value) -> None:
+            if isinstance(value, dict):
+                code = value.get("code")
+                if code in _BATCH_MARKER_CODES and code not in found:
+                    found.append(code)
+                for child in value.values():
+                    walk(child)
+            elif isinstance(value, list):
+                for child in value:
+                    walk(child)
+
+        walk(body)
+        return tuple(found)
 
     def inject(self, author_not_in: str) -> Response:
         """Send a payload placing `author_not_in` into the WP_Query author__not_in clause."""

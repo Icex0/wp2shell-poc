@@ -27,7 +27,6 @@ class _HomepageParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__()
         self.meta_generators = []
-        self.assets = []
 
     def handle_starttag(self, tag: str, attrs: Iterable[Tuple[str, Optional[str]]]) -> None:
         values = {name.lower(): value for name, value in attrs if value is not None}
@@ -35,11 +34,6 @@ class _HomepageParser(HTMLParser):
             content = values.get("content")
             if content:
                 self.meta_generators.append(content)
-            return
-        if tag.lower() in ("link", "script"):
-            asset = values.get("href") or values.get("src")
-            if asset:
-                self.assets.append(asset)
 
 
 def public_version_hints(client: BatchClient) -> Tuple[VersionHint, ...]:
@@ -84,10 +78,33 @@ def public_version_hints(client: BatchClient) -> Tuple[VersionHint, ...]:
         parser.feed(response.body)
         for generator in parser.meta_generators:
             add(_version_from_wordpress_text(generator), "HTML generator meta", generator)
-        for asset in parser.assets:
-            add(_version_from_core_asset(asset), "core asset query string", asset)
 
     return tuple(hints)
+
+
+def wordpress_markers(client: BatchClient) -> Tuple[str, ...]:
+    markers = []
+
+    response = _get(client, "/")
+    if response is not None and response.status < 400:
+        if "wp-content/" in response.body and "wp-content" not in markers:
+            markers.append("wp-content")
+        if "wp-includes/" in response.body and "wp-includes" not in markers:
+            markers.append("wp-includes")
+
+    for path in ("/wp-json/", "/?rest_route=/"):
+        response = _get(client, path)
+        if response is None or response.status >= 400:
+            continue
+        try:
+            body = response.json()
+        except json.JSONDecodeError:
+            body = None
+        if isinstance(body, dict) and ("routes" in body or "wp/v2" in response.body):
+            if "wp-json" not in markers:
+                markers.append("wp-json")
+
+    return tuple(markers)
 
 
 def is_affected_version(version: str) -> bool:
@@ -122,17 +139,6 @@ def _version_from_generator(value: str) -> Optional[str]:
 def _version_from_wordpress_text(value: str) -> Optional[str]:
     match = _WORDPRESS_RE.search(value)
     return _normalize_version(match.group(1)) if match else None
-
-
-def _version_from_core_asset(value: str) -> Optional[str]:
-    parsed = urllib.parse.urlparse(value)
-    if "/wp-includes/" not in parsed.path and "/wp-admin/" not in parsed.path:
-        return None
-    for version in urllib.parse.parse_qs(parsed.query).get("ver", []):
-        normalized = _normalize_version(version)
-        if normalized:
-            return normalized
-    return None
 
 
 def _normalize_version(value: str) -> Optional[str]:
