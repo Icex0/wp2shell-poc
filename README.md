@@ -10,6 +10,8 @@ This repository is not Searchlight Cyber's official checker. `check` confirms th
 `read` demonstrates database read, and `shell` opens a plugin-backed command shell either with
 supplied administrator credentials or by first exercising the SQLi-to-admin bridge.
 
+![wp2shell — the `shell` command exercising the pre-auth SQLi-to-admin bridge](docs/shell.svg)
+
 ## Affected versions
 
 Searchlight Cyber's advisory lists these wp2shell RCE exposure ranges:
@@ -134,8 +136,8 @@ administrator, then uploads the plugin shell.
 ```
 ./wp2shell.py shell http://target --user admin --password '<recovered>' --cmd id
 ./wp2shell.py shell http://target --user admin --password '<recovered>' -i   # interactive shell
-./wp2shell.py shell http://target --rest-route --cmd id                      # pre-auth bridge
-./wp2shell.py shell http://target --rest-route -i                            # pre-auth interactive
+./wp2shell.py shell http://target --cmd id                                   # pre-auth bridge
+./wp2shell.py shell http://target -i                                         # pre-auth interactive
 ```
 
 `shell` uploads a plugin webshell (locked behind a random path and a per-run token) and prints its
@@ -146,7 +148,6 @@ administrator, that generated account is removed automatically after the shell s
 
 | Option              | Applies to | Description                                                           |
 | ------------------- | ---------- | -------------------------------------------------------------------- |
-| `--rest-route`      | check, read | Use `/?rest_route=/batch/v1` (for sites without pretty permalinks). |
 | `--proxy URL`       | all        | Route traffic through an HTTP proxy (for example, Burp).             |
 | `--timeout N`       | all        | Request timeout in seconds.                                          |
 | `--sleep N`         | check      | Delay used by the timing fallback for `--confirm-sqli`.              |

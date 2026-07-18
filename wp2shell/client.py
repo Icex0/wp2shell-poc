@@ -41,22 +41,20 @@ class BatchClient:
         base_url: str,
         *,
         timeout: float = 30.0,
-        rest_route: bool = False,
         proxy: Optional[str] = None,
         user_agent: str = "wp2shell",
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
-        self.rest_route = rest_route
         self.user_agent = user_agent
         handlers = [urllib.request.ProxyHandler({"http": proxy, "https": proxy})] if proxy else []
         self._opener = urllib.request.build_opener(*handlers)
 
     @property
     def endpoint(self) -> str:
-        if self.rest_route:
-            return f"{self.base_url}/?rest_route=/batch/v1"
-        return f"{self.base_url}/wp-json/batch/v1"
+        # ?rest_route= works on any install (including the plain-permalinks default); /wp-json/ would
+        # require pretty permalinks, so this form is always used.
+        return f"{self.base_url}/?rest_route=/batch/v1"
 
     def post(self, payload: dict) -> Response:
         request = urllib.request.Request(
