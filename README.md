@@ -43,7 +43,7 @@ The PoC nests the primitive twice:
    `author__not_in` query var, which the vulnerable build interpolates into SQL as a string.
 
 The result is a boolean- and time-based blind SQL injection reachable pre-authentication. This PoC
-also includes the stronger UNION fake-post primitive used by the SQLi-to-admin chain.
+also includes the UNION fake-post primitive used by the SQLi-to-admin chain.
 
 The RCE path implemented here is:
 
@@ -53,10 +53,10 @@ The RCE path implemented here is:
 4. In one poisoned batch request, recast those IDs as a customizer changeset, navigation item, and
    request hook shape.
 5. Let the same request reach `POST /wp/v2/users`, creating a generated administrator.
-6. Log in as that generated administrator and use normal plugin upload behavior to run a command.
+6. Log in as that generated administrator and use plugin upload behavior to run a command.
 
-The last command-execution step is ordinary authenticated administrator plugin upload. The
-pre-authentication part is the admin creation bridge.
+The command-execution step is authenticated administrator plugin upload. The pre-authentication
+part is the admin creation bridge.
 
 ## Requirements
 
@@ -72,7 +72,7 @@ Run it from the repository directory:
 
 Or `pip install .` to get a `wp2shell` command on your `PATH`.
 
-### check — confirm the vulnerability (safe)
+### check — non-destructive vulnerability check
 
 Prints passive WordPress markers and public version hints first, then sends a benign batch marker
 probe. A vulnerable batch implementation returns HTTP 207 with the route-confusion marker pattern
@@ -86,20 +86,20 @@ the parse error shifts the batch handler arrays out of step, so the spacer reque
 under the block-renderer handler. Fixed builds keep the arrays aligned, so this exact all-three
 pattern should not appear for the crafted probe.
 
-By default, `check` stops there and does not send a SQL timing payload. Use `--confirm-sqli` when
-you also want the active paired timing confirmation. The timing step reads no data and changes
-nothing; it sends three baseline/delayed pairs by default and decides on the median delta.
+By default, `check` stops there and does not send an SQLi payload. Use `--confirm-sqli` when you
+also want an active SQLi confirmation. The confirmation tries the UNION read primitive first and
+falls back to paired timing probes if UNION reflection is unavailable.
 
-Treat the signals separately: an affected public version is strong triage evidence, the batch
-marker pattern confirms the vulnerable route-confusion behavior, and timing confirmation proves the
-SQLi path reached the database. A WAF or edge rule can block the timing payload, so a failed timing
-check does not override a positive marker probe.
+Treat the signals separately: a public version hint is only a hint, the batch marker pattern checks
+for the route-confusion behavior, and `--confirm-sqli` checks whether an SQL payload reached the
+database. A WAF or edge rule can block the active SQLi payload, so a failed SQLi confirmation does
+not necessarily mean the route-confusion bug is absent.
 
 ```
 ./wp2shell.py check http://target
 ```
 
-### read — extract data (blind SQL injection)
+### read — extract data through SQL injection
 
 ```
 ./wp2shell.py read http://target                      # server fingerprint
@@ -107,9 +107,9 @@ check does not override a positive marker probe.
 ./wp2shell.py read http://target --query "SELECT @@version"
 ```
 
-By default extraction is `--technique auto`, which picks the fastest in-band method that works:
+By default extraction is `--technique auto`, which tries the available methods in this order:
 
-1. **union** — forges a fake `WP_Post` row and reads its reflected title: **one request per value**.
+1. **union** — forges a fake `WP_Post` row and reads its reflected title.
    The source request targets the single-post item route (`/wp/v2/posts/999999`), so the
    collection-only params `author_exclude`, `orderby` and `per_page` ride through unchecked; the
    inner desync dispatches it under the posts *collection* handler, where `orderby=none` removes the
@@ -120,17 +120,13 @@ By default extraction is `--technique auto`, which picks the fastest in-band met
    MySQL errors (e.g. `WP_DEBUG_DISPLAY` on).
 3. **blind** — boolean/timing binary search, ~8 requests per character; works with no reflection.
 
-Force one with `--technique union|error|blind`. All three are strictly **read only**. The union
-path also demonstrates fake-`WP_Post` object-cache poisoning: the forged row is added to the `posts`
-cache for the rest of the request, and its `post_content` blocks render through REST (which enables
-unauthenticated SSRF via RSS/oEmbed blocks). A full password hash is ~2 requests with `union`, ~7
-with `error`, versus ~490 blind.
+Force one with `--technique union|error|blind`. These read paths do not write database rows. The
+union path adds the forged row to the `posts` cache for the rest of the request.
 
 ### shell — command execution
 
 With `--user` and `--password`, `shell` logs in with supplied administrator credentials and uses
-normal WordPress plugin upload behavior. This mode would work the same way on a patched site where
-those credentials are valid.
+WordPress plugin upload behavior.
 
 Without credentials, `shell` first runs the pre-auth SQLi-to-admin bridge, logs in as the generated
 administrator, then uploads the plugin shell.
@@ -153,9 +149,9 @@ administrator, that generated account is removed automatically after the shell s
 | `--rest-route`      | check, read | Use `/?rest_route=/batch/v1` (for sites without pretty permalinks). |
 | `--proxy URL`       | all        | Route traffic through an HTTP proxy (for example, Burp).             |
 | `--timeout N`       | all        | Request timeout in seconds.                                          |
-| `--sleep N`         | check      | Delay used with `--confirm-sqli`.                                    |
-| `--samples N`       | check      | Timing pairs used with `--confirm-sqli` (default 3).                 |
-| `--confirm-sqli`    | check      | Also send the active SQL timing confirmation payload.                |
+| `--sleep N`         | check      | Delay used by the timing fallback for `--confirm-sqli`.              |
+| `--samples N`       | check      | Timing pairs used by the timing fallback for `--confirm-sqli`.       |
+| `--confirm-sqli`    | check      | Also send an active SQLi confirmation payload.                       |
 | `--preset`          | read       | `fingerprint` or `users`.                                            |
 | `--technique`       | read       | `auto` (default), `union` (in-band, forges a fake post), `error` (in-band, needs visible DB errors), or `blind`. |
 | `--query`           | read       | A scalar SQL expression to read.                                     |
@@ -181,3 +177,4 @@ written permission to test. No warranty is provided and no liability is accepted
 
 - WordPress 7.0.2 release announcement — <https://wordpress.org/news/2026/07/wordpress-7-0-2-release/>
 - Searchlight Cyber wp2shell advisory — <https://slcyber.io/research-center/wp2shell-pre-authentication-rce-in-wordpress-core/>
+- sergiointel/wp2shell-poc SQLi-to-admin bridge — <https://github.com/sergiointel/wp2shell-poc>

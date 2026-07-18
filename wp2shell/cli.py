@@ -87,10 +87,11 @@ def _print_version_hints(client: BatchClient) -> tuple:
 
     info("Public WordPress version hints:")
     for hint in hints:
-        print(
+        line = (
             f"    - {hint.version} via {hint.source} "
             f"({version_status(hint.version)}) - {_short(hint.detail)}"
         )
+        print(_paint("33", line) if hint.affected else _paint("32", line))
     if any(hint.affected for hint in hints):
         warn("A public version hint falls in the wp2shell affected range; verify internally or confirm with authorization.")
     return hints
@@ -124,13 +125,19 @@ def cmd_check(args: argparse.Namespace) -> int:
     if route_confusion:
         good("VULNERABLE — batch route-confusion behavior detected.")
         if not args.confirm_sqli:
-            info("SQL timing confirmation not sent; use --confirm-sqli for the active SQLi probe.")
+            info("SQLi confirmation not sent; use --confirm-sqli for the active SQLi probe.")
             return 0
     elif not args.confirm_sqli:
         bad("Route-confusion marker pattern not detected.")
         if any(hint.affected for hint in hints):
             warn("Version suggests exposure, but the batch marker probe did not show vulnerable behavior.")
         return 2
+
+    union = UnionSQLi(client)
+    if union.available():
+        good("SQLi confirmed — UNION fake-post read returned data.")
+        return 0
+    info("UNION SQLi confirmation unavailable; falling back to timing confirmation.")
 
     result = BlindSQLi(client, sleep=args.sleep).confirm_timing(samples=args.samples)
     if args.samples > 1:
@@ -372,18 +379,18 @@ def build_parser() -> argparse.ArgumentParser:
         "--sleep",
         type=float,
         default=3.0,
-        help="SQL timing delay used with --confirm-sqli (default: 3)",
+        help="SQL timing delay used by the --confirm-sqli fallback (default: 3)",
     )
     check.add_argument(
         "--samples",
         type=int,
         default=3,
-        help="baseline/delayed SQL timing pairs used with --confirm-sqli (default: 3)",
+        help="baseline/delayed SQL timing pairs used by the --confirm-sqli fallback (default: 3)",
     )
     check.add_argument(
         "--confirm-sqli",
         action="store_true",
-        help="also send the active SQL timing confirmation payload",
+        help="also send an active SQLi confirmation payload",
     )
     check.set_defaults(func=cmd_check)
 
