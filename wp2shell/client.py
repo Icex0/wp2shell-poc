@@ -93,10 +93,6 @@ class BatchClient:
             raise TargetError(f"cannot reach {url}: {reason}") from None
         return Response(status, time.monotonic() - start, body)
 
-    def probe(self) -> Response:
-        """A benign empty batch, used to test whether the endpoint is reachable and open."""
-        return self.post({"requests": []})
-
     def marker_probe(self) -> Response:
         """A benign batch that exposes the vulnerable route-confusion alignment bug."""
         return self.post(

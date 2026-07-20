@@ -71,8 +71,8 @@ def _short(text: str, *, limit: int = 96) -> str:
     return text[: limit - 3] + "..."
 
 
-def _print_wordpress_markers(client: BatchClient) -> tuple:
-    markers = wordpress_markers(client)
+def _print_wordpress_markers(client: BatchClient, homepage=None) -> tuple:
+    markers = wordpress_markers(client, homepage)
     if markers:
         info(f"WordPress markers found ({' / '.join(markers)})")
     else:
@@ -80,8 +80,8 @@ def _print_wordpress_markers(client: BatchClient) -> tuple:
     return markers
 
 
-def _print_version_hints(client: BatchClient) -> tuple:
-    hints = public_version_hints(client)
+def _print_version_hints(client: BatchClient, homepage=None) -> tuple:
+    hints = public_version_hints(client, homepage)
     if not hints:
         warn("No public WordPress version hints found.")
         return hints
@@ -101,30 +101,53 @@ def _print_version_hints(client: BatchClient) -> tuple:
 # -- commands ---------------------------------------------------------------
 
 
-_URL_RE = re.compile(r"https?://\S+")
+_URL_RE = re.compile(r"https?://\S+$", re.IGNORECASE)
+# A bare host: a domain-with-TLD or an IPv4, with an optional :port and /path, no scheme, no spaces.
+_HOST_RE = re.compile(
+    r"^(?:(?:[A-Za-z0-9_-]+\.)+[A-Za-z]{2,}|(?:\d{1,3}\.){3}\d{1,3})(?::\d{1,5})?(?:/\S*)?$"
+)
+
+
+def _as_target(line: str) -> Optional[str]:
+    """Return a scannable base URL for one input line, or None if it is not a URL or host.
+
+    A line already carrying an http(s):// scheme is used as-is; a bare host (``example.com``,
+    ``10.0.0.1:8443``, ``host/path``) is prefixed with ``https://``. Blank lines, comments (#...),
+    wildcards and anything else are skipped.
+    """
+    line = line.strip()
+    if not line or line.startswith("#"):
+        return None
+    if _URL_RE.match(line):
+        return line
+    if _HOST_RE.match(line):
+        return "https://" + line
+    return None
 
 
 def _resolve_targets(value: str) -> List[str]:
-    """Resolve the check target: a single URL, or the http(s):// URLs listed in a file.
+    """Resolve the check target(s): a single URL/host, or the URLs/hosts listed in a file.
 
-    A file is accepted only if it actually contains http:// or https:// URLs. Lines without a
-    scheme (bare domains, comments, blanks) are ignored, and a file with no URLs is rejected.
+    Bare hosts are scanned over https://. A file may mix URLs and hosts, one per line; blank lines,
+    comments (#...) and non-target lines (wildcards, prose, ...) are ignored. A file with no
+    scannable target is rejected.
     """
-    if _URL_RE.search(value):
-        return [value.strip()]
-    if os.path.isfile(value):
-        urls: List[str] = []
-        seen = set()
-        with open(value, encoding="utf-8", errors="replace") as handle:
-            for line in handle:
-                match = _URL_RE.search(line)
-                if match and match.group(0) not in seen:
-                    seen.add(match.group(0))
-                    urls.append(match.group(0))
-        if not urls:
-            raise ValueError(f"{value}: no http:// or https:// URLs found in file")
-        return urls
-    raise ValueError(f"{value!r} is not a URL (http[s]://...) or a file containing such URLs")
+    if not os.path.isfile(value):
+        target = _as_target(value)
+        if target:
+            return [target]
+        raise ValueError(f"{value!r} is not a URL, a host, or a file of targets")
+    targets: List[str] = []
+    seen = set()
+    with open(value, encoding="utf-8", errors="replace") as handle:
+        for line in handle:
+            target = _as_target(line)
+            if target and target not in seen:
+                seen.add(target)
+                targets.append(target)
+    if not targets:
+        raise ValueError(f"{value}: no scannable URLs or hosts found in file")
+    return targets
 
 
 def cmd_check(args: argparse.Namespace) -> int:
@@ -153,19 +176,46 @@ def cmd_check(args: argparse.Namespace) -> int:
     return 0 if vulnerable else 2
 
 
+def _batch_status_reason(status: int) -> str:
+    """Reason a batch response wasn't 207, for the statuses WordPress actually documents for a
+    restricted/absent REST route (reads as 'is {reason}'). Any other status stays neutral -- the raw
+    code is always printed alongside -- rather than asserting an unverified interpretation.
+    """
+    if status == 401:
+        return "behind authentication"  # WP rest_not_logged_in
+    if status == 403:
+        return "forbidden (WAF, edge rule, or REST restriction)"  # WP rest_disabled, or an edge WAF
+    if status == 404:
+        return "not found"  # WP rest_no_route
+    return "unavailable"
+
+
 def _check_one(url: str, args: argparse.Namespace) -> int:
-    # The confirmation request sleeps for --sleep, so the timeout must exceed it.
-    client = BatchClient(
-        url,
-        timeout=max(args.timeout, args.sleep + 10),
-        proxy=args.proxy,
-    )
-    _print_wordpress_markers(client)
-    hints = _print_version_hints(client)
+    # Only --confirm-sqli's timing probe sleeps server-side and needs the +10 floor; a plain scan
+    # honors --timeout directly, so a low value skips dead hosts fast.
+    timeout = max(args.timeout, args.sleep + 10) if args.confirm_sqli else args.timeout
+    client = BatchClient(url, timeout=timeout, proxy=args.proxy)
+    # Reachability gate, reusing the homepage the markers/version stages need: a dead host fails
+    # here after one timeout instead of on every probe.
+    try:
+        homepage = client.get("/")
+    except TargetError as exc:
+        bad(str(exc))
+        return 1
+    wp_markers = _print_wordpress_markers(client, homepage)
+    hints = _print_version_hints(client, homepage)
 
     probe = client.marker_probe()
     if probe.status != 207:
-        bad(f"Batch endpoint returned HTTP {probe.status} (not 207) — patched or REST API disabled.")
+        # A patched WordPress still answers 207 (below); a non-207 means no batch endpoint here --
+        # only call it WordPress if a marker/hint did.
+        reason = _batch_status_reason(probe.status)
+        if wp_markers or hints:
+            bad(f"Batch endpoint returned HTTP {probe.status} (not 207) — WordPress detected, but its "
+                f"batch endpoint is {reason}.")
+        else:
+            bad(f"Batch endpoint returned HTTP {probe.status} (not 207), and no WordPress markers or "
+                f"version hints; batch endpoint is {reason} — likely not WordPress.")
         return 1
     markers = client.batch_marker_codes(probe)
     if markers:
@@ -408,7 +458,7 @@ def cmd_shell(args: argparse.Namespace) -> int:
 
 def _add_common(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("url", help="target base URL, e.g. http://target")
-    parser.add_argument("--timeout", type=float, default=30.0, help="request timeout (default: 30)")
+    parser.add_argument("--timeout", type=float, default=15.0, help="request timeout (default: 15)")
     parser.add_argument("--proxy", help="HTTP proxy, e.g. http://127.0.0.1:8080")
 
 

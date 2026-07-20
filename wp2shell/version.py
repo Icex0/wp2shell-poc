@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from html.parser import HTMLParser
 from typing import Iterable, Optional, Tuple
 
-from .client import BatchClient, TargetError
+from .client import BatchClient, Response, TargetError
 
 _WORDPRESS_RE = re.compile(r"\bWordPress\s+([0-9]+(?:\.[0-9]+){1,3})\b", re.I)
 _VERSION_RE = re.compile(r"\b([0-9]+(?:\.[0-9]+){1,3})\b")
@@ -36,7 +36,7 @@ class _HomepageParser(HTMLParser):
                 self.meta_generators.append(content)
 
 
-def public_version_hints(client: BatchClient) -> Tuple[VersionHint, ...]:
+def public_version_hints(client: BatchClient, homepage: Optional[Response] = None) -> Tuple[VersionHint, ...]:
     hints = []
     seen = set()
 
@@ -72,7 +72,7 @@ def public_version_hints(client: BatchClient) -> Tuple[VersionHint, ...]:
             if isinstance(generator, str):
                 add(_version_from_generator(generator), source, generator)
 
-    response = _get(client, "/")
+    response = homepage if homepage is not None else _get(client, "/")
     if response is not None and response.status < 400:
         parser = _HomepageParser()
         parser.feed(response.body)
@@ -82,15 +82,43 @@ def public_version_hints(client: BatchClient) -> Tuple[VersionHint, ...]:
     return tuple(hints)
 
 
-def wordpress_markers(client: BatchClient) -> Tuple[str, ...]:
+_WP_ASSET_RE = re.compile(r"/(wp-content|wp-includes)/")
+_URL_BOUNDARY = ("\"", "'", "`", "(", "<", ">", " ", "\t", "\r", "\n")
+
+
+def _registrable_domain(host: str) -> str:
+    """Last two labels of a host -- enough to tell the target's own domain from a third party's."""
+    labels = host.lower().rsplit(":", 1)[0].split(".")
+    return ".".join(labels[-2:]) if len(labels) >= 2 else host.lower()
+
+
+def _same_origin_wp_segments(body: str, target_host: str) -> set:
+    """wp-content/wp-includes segments `body` references from the target's *own* domain.
+
+    A bare substring match flags third-party asset URLs (a favicon or logo hosted on an unrelated
+    WordPress site), so each hit is resolved to its URL's host: root-relative and own-domain
+    references count; other domains do not.
+    """
+    target_domain = _registrable_domain(target_host)
+    found = set()
+    for match in _WP_ASSET_RE.finditer(body):
+        start = max((body.rfind(ch, 0, match.start()) for ch in _URL_BOUNDARY), default=-1)
+        host = re.match(r"(?:https?:)?//([\w.\-]+)", body[start + 1 : match.start()])
+        if host is None or _registrable_domain(host.group(1)) == target_domain:
+            found.add(match.group(1))
+    return found
+
+
+def wordpress_markers(client: BatchClient, homepage: Optional[Response] = None) -> Tuple[str, ...]:
     markers = []
 
-    response = _get(client, "/")
+    response = homepage if homepage is not None else _get(client, "/")
     if response is not None and response.status < 400:
-        if "wp-content/" in response.body and "wp-content" not in markers:
-            markers.append("wp-content")
-        if "wp-includes/" in response.body and "wp-includes" not in markers:
-            markers.append("wp-includes")
+        host = urllib.parse.urlsplit(client.base_url).netloc
+        segments = _same_origin_wp_segments(response.body, host)
+        for segment in ("wp-content", "wp-includes"):
+            if segment in segments:
+                markers.append(segment)
 
     for path in ("/wp-json/", "/?rest_route=/"):
         response = _get(client, path)

