@@ -146,6 +146,7 @@ administrator, that generated account is removed automatically after the shell s
 | Option              | Applies to | Description                                                           |
 | ------------------- | ---------- | -------------------------------------------------------------------- |
 | `--proxy URL`       | all        | Route traffic through an HTTP proxy (for example, Burp).             |
+| `-k` / `--insecure` | all        | Skip TLS certificate verification (for self-signed/untrusted certs). |
 | `--timeout N`       | all        | Request timeout in seconds.                                          |
 | `--sleep N`         | check      | Delay used by the timing fallback for `--confirm-sqli`.              |
 | `--samples N`       | check      | Timing pairs used by the timing fallback for `--confirm-sqli`.       |

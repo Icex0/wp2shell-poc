@@ -17,7 +17,7 @@ import uuid
 import zipfile
 from typing import Dict, Optional, Tuple
 
-from .client import TargetError
+from .client import TargetError, tls_handlers
 
 _MARKER = "WP2SHELL"
 
@@ -32,6 +32,7 @@ class AdminSession:
         timeout: float = 20.0,
         proxy: Optional[str] = None,
         user_agent: str = "wp2shell",
+        verify: bool = True,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
@@ -42,6 +43,7 @@ class AdminSession:
         handlers = [urllib.request.HTTPCookieProcessor(self._jar)]
         if proxy:
             handlers.append(urllib.request.ProxyHandler({"http": proxy, "https": proxy}))
+        handlers += tls_handlers(verify)
         self._opener = urllib.request.build_opener(*handlers)
         self._opener.addheaders = [("User-Agent", user_agent)]
 
