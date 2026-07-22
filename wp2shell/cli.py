@@ -392,6 +392,8 @@ def cmd_shell(args: argparse.Namespace) -> int:
         generated_admin = creator.create_admin()
         username, password = generated_admin.username, generated_admin.password
         good(f"Administrator created: {username}")
+        good(f"    email:    {generated_admin.email}")
+        good(f"    password: {password}")
 
     session = AdminSession(args.url, timeout=args.timeout, proxy=args.proxy)
 
@@ -399,7 +401,9 @@ def cmd_shell(args: argparse.Namespace) -> int:
     if not session.login(username, password):
         bad("Login failed.")
         if generated_admin:
-            warn("The pre-auth bridge appeared to run, but the generated credentials did not log in.")
+            warn("The generated admin exists on the target, but auto-login was blocked (e.g. a WAF/Edge rule 403).")
+            warn(f"Log in manually with:  {username} / {password}")
+            warn("It is not auto-removed (no shell session started) — delete the account when you are done.")
         return 1
     good("Authenticated.")
 
