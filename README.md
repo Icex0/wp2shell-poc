@@ -177,6 +177,7 @@ written permission to test. No warranty is provided and no liability is accepted
 
 - WordPress 7.0.2 release announcement — <https://wordpress.org/news/2026/07/wordpress-7-0-2-release/>
 - Searchlight Cyber wp2shell advisory — <https://slcyber.io/research-center/wp2shell-pre-authentication-rce-in-wordpress-core/>
+- Hackify — wp2shell technical analysis — <https://hackify.nl/en/blog/wp2shell-wordpress-core-rce/>
 - sergiointel/wp2shell-poc SQLi-to-admin bridge — <https://github.com/sergiointel/wp2shell-poc>
 - Elastic Security Labs — wp2shell detection & IoCs — <https://www.elastic.co/security-labs/wp2shell-wordpress-rce-detection-elastic-defend>
 - Eye Security — wp2shell defenders guide — <https://labs.eye.security/wp2shell-defenders-guide/>
