@@ -9,6 +9,8 @@ supplied administrator credentials or by first exercising the SQLi-to-admin brid
 
 ![wp2shell — the `shell` command exercising the pre-auth SQLi-to-admin bridge](docs/shell.svg)
 
+**Detection / IoCs:** Elastic Security Labs published detection guidance and indicators for this chain. See [their write-up](https://www.elastic.co/security-labs/wp2shell-wordpress-rce-detection-elastic-defend)
+
 ## Affected versions
 
 Searchlight Cyber's advisory lists these wp2shell RCE exposure ranges:
@@ -176,3 +178,4 @@ written permission to test. No warranty is provided and no liability is accepted
 - WordPress 7.0.2 release announcement — <https://wordpress.org/news/2026/07/wordpress-7-0-2-release/>
 - Searchlight Cyber wp2shell advisory — <https://slcyber.io/research-center/wp2shell-pre-authentication-rce-in-wordpress-core/>
 - sergiointel/wp2shell-poc SQLi-to-admin bridge — <https://github.com/sergiointel/wp2shell-poc>
+- Elastic Security Labs — wp2shell detection & IoCs — <https://www.elastic.co/security-labs/wp2shell-wordpress-rce-detection-elastic-defend>
