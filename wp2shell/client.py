@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import ssl
 import time
 import urllib.error
 import urllib.parse
@@ -18,6 +19,19 @@ from typing import Any, Optional
 _DESYNC_PRIMER = {"method": "POST", "path": "///"}
 _BATCH_MARKER_CODES = ("parse_path_failed", "block_cannot_read", "rest_batch_not_allowed")
 POSTS_ITEM_SOURCE_PATH = "/wp/v2/posts/999999"
+
+
+def tls_handlers(verify: bool) -> list:
+    """Return urllib handlers disabling TLS certificate verification when ``verify`` is False.
+
+    Used for targets with self-signed or otherwise untrusted certificates (e.g. a lab host behind
+    an intercepting proxy). Returns an empty list when verification is on, leaving urllib's default
+    context in place.
+    """
+    if verify:
+        return []
+    context = ssl._create_unverified_context()
+    return [urllib.request.HTTPSHandler(context=context)]
 
 
 class TargetError(Exception):
@@ -44,11 +58,13 @@ class BatchClient:
         timeout: float = 30.0,
         proxy: Optional[str] = None,
         user_agent: str = "wp2shell",
+        verify: bool = True,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
         self.user_agent = user_agent
         handlers = [urllib.request.ProxyHandler({"http": proxy, "https": proxy})] if proxy else []
+        handlers += tls_handlers(verify)
         self._opener = urllib.request.build_opener(*handlers)
 
     @property

@@ -62,6 +62,7 @@ def _client(args: argparse.Namespace) -> BatchClient:
         args.url,
         timeout=args.timeout,
         proxy=args.proxy,
+        verify=not args.insecure,
     )
 
 
@@ -194,7 +195,7 @@ def _check_one(url: str, args: argparse.Namespace) -> int:
     # Only --confirm-sqli's timing probe sleeps server-side and needs the +10 floor; a plain scan
     # honors --timeout directly, so a low value skips dead hosts fast.
     timeout = max(args.timeout, args.sleep + 10) if args.confirm_sqli else args.timeout
-    client = BatchClient(url, timeout=timeout, proxy=args.proxy)
+    client = BatchClient(url, timeout=timeout, proxy=args.proxy, verify=not args.insecure)
     # Reachability gate, reusing the homepage the markers/version stages need: a dead host fails
     # here after one timeout instead of on every probe.
     try:
@@ -387,6 +388,7 @@ def cmd_shell(args: argparse.Namespace) -> int:
             args.url,
             timeout=args.timeout,
             proxy=args.proxy,
+            verify=not args.insecure,
         )
         info("Creating administrator through the SQLi-to-customizer bridge...")
         generated_admin = creator.create_admin()
@@ -395,7 +397,7 @@ def cmd_shell(args: argparse.Namespace) -> int:
         good(f"    email:    {generated_admin.email}")
         good(f"    password: {password}")
 
-    session = AdminSession(args.url, timeout=args.timeout, proxy=args.proxy)
+    session = AdminSession(args.url, timeout=args.timeout, proxy=args.proxy, verify=not args.insecure)
 
     info(f"Authenticating as {username!r}...")
     if not session.login(username, password):
@@ -464,6 +466,12 @@ def _add_common(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("url", help="target base URL, e.g. http://target")
     parser.add_argument("--timeout", type=float, default=15.0, help="request timeout (default: 15)")
     parser.add_argument("--proxy", help="HTTP proxy, e.g. http://127.0.0.1:8080")
+    parser.add_argument(
+        "-k",
+        "--insecure",
+        action="store_true",
+        help="skip TLS certificate verification (for self-signed/untrusted certs)",
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
